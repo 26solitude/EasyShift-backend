@@ -15,7 +15,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     env:
-      IMAGE_NAME: codinggroot/easy-schedule
+      IMAGE_NAME: hojang/easyshift-backend
       IMAGE_TAG: ${{ github.sha }}
     steps:
       - name: Checkout repository
