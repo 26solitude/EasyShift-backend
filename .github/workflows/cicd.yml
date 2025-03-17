@@ -58,6 +58,7 @@ jobs:
               --cache-to=type=registry,ref=${IMAGE_NAME}:cache,mode=max \
               -f Dockerfile \
               -t ${IMAGE_NAME}:dev_${IMAGE_TAG} \
+              -t ${IMAGE_NAME}:latest \
               --push .
           else
             echo "Unsupported branch: ${TARGET_BRANCH}"
@@ -68,7 +69,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: build
     env:
-      IMAGE_NAME: codinggroot/easy-schedule
+      IMAGE_NAME: hojang/easyshift-backend
       DB_URL_PROD: ${{ secrets.DB_URL }}
       DB_URL_DEV: ${{ secrets.DB_URL_DEVELOP }}
     strategy:
