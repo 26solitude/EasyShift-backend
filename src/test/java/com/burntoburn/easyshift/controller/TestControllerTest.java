@@ -27,7 +27,6 @@ class TestControllerTest {
     
     @Autowired
     private MockMvc mockMvc;
-    
     @Test
     void testEndpointReturnsSuccessMessage() throws Exception {
         mockMvc.perform(get("/api/test"))
