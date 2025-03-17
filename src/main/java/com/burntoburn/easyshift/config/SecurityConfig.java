@@ -52,7 +52,7 @@ public class SecurityConfig {
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
                 // Authorization rules
-                .authorizeHttpRequests(this::configureAuthorization)
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                 // OAuth2 login configuration
 //                .oauth2Login(this::configureOAuth2Login)
                 .addFilterBefore(accessTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
