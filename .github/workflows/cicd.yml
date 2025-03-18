@@ -2,9 +2,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches: [ main, develop ]
   pull_request:
-    branches: [main, develop]
+    branches: [ main, develop ]
   workflow_dispatch:
 
 permissions:
@@ -78,12 +78,29 @@ jobs:
             container: easyshift_prod
             port: 81
             db_url: ${{ secrets.DB_URL }}
-            oauth_config: ${{ secrets.APPLICATION_OAUTH_CONFIG_PROD }}
+            jwt_issuer: ${{ secrets.JWT_ISSUER }}
+            jwt_secret_key: ${{ secrets.JWT_SECRET_KEY }}
+            client_id: ${{ secrets.KAKAO_CLIENT_ID }}
+            client_secret: ${{ secrets.KAKAO_CLIENT_SECRET }}
+            redirect_uri: ${{ secrets.KAKAO_REDIRECT_URI }}
+            authorization_uri: ${{ secrets.KAKAO_AUTHORIZATION_URI }}
+            token_uri: ${{ secrets.KAKAO_TOKEN_URI }}
+            user_info_uri: ${{ secrets.KAKAO_USER_INFO_URI }}
+            scope: ${{ secrets.KAKAO_SCOPE }}
           - branch: develop
             container: easyshift_dev
             port: 8081
             db_url: ${{ secrets.DB_URL_DEVELOP }}
-            oauth_config: ${{ secrets.APPLICATION_OAUTH_CONFIG_DEV }}
+            jwt_issuer: ${{ secrets.JWT_ISSUER }}
+            jwt_secret_key: ${{ secrets.JWT_SECRET_KEY }}
+            client_id: ${{ secrets.KAKAO_CLIENT_ID }}
+            client_secret: ${{ secrets.KAKAO_CLIENT_SECRET }}
+            redirect_uri: ${{ secrets.KAKAO_REDIRECT_URI }}
+            authorization_uri: ${{ secrets.KAKAO_AUTHORIZATION_URI }}
+            token_uri: ${{ secrets.KAKAO_TOKEN_URI }}
+            user_info_uri: ${{ secrets.KAKAO_USER_INFO_URI }}
+            scope: ${{ secrets.KAKAO_SCOPE }}
+
     steps:
       - name: Deploy via SSH
         if: github.ref == format('refs/heads/{0}', matrix.branch)
@@ -95,11 +112,11 @@ jobs:
           script: |
             echo "Pulling latest image: ${{ env.IMAGE_NAME }}"
             docker pull ${{ env.IMAGE_NAME }}:${{ github.sha }}
-
+            
             echo "Stopping and removing existing container"
             docker stop ${{ matrix.container }} || true
             docker rm ${{ matrix.container }} || true
-
+            
             echo "Starting new container..."
             docker run -d --restart unless-stopped \
               --name ${{ matrix.container }} \
@@ -111,5 +128,14 @@ jobs:
               -e DB_DIALECT="${{ secrets.DB_DIALECT }}" \
               -e DB_USERNAME="${{ secrets.DB_USERNAME }}" \
               -e DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-              -e APPLICATION_OAUTH_CONFIG="${{ matrix.oauth_config }}" \
+              -e JWT_ISSUER="${{ matrix.jwt_issuer }}" \
+              -e JWT_SECRET_KEY="${{ matrix.jwt_secret_key }}" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_CLIENT_ID="${{ matrix.client_id }}" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_CLIENT_SECRET="${{ matrix.client_secret }}" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_REDIRECT_URI="${{ matrix.redirect_uri }}" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_AUTHORIZATION_GRANT_TYPE="authorization_code" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KAKAO_AUTHORIZATION_URI="${{ matrix.authorization_uri }}" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KAKAO_TOKEN_URI="${{ matrix.token_uri }}" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KAKAO_USER_INFO_URI="${{ matrix.user_info_uri }}" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_SCOPE="${{ matrix.scope }}" \
               ${{ env.IMAGE_NAME }}:${{ github.sha }}
