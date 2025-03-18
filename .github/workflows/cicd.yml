@@ -2,9 +2,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:
@@ -75,9 +75,15 @@ jobs:
           - branch: main
             container: easyshift_prod
             port: 81
+            db_url: ${{ secrets.DB_URL }}
+            oauth_config: ${{ secrets.APPLICATION_OAUTH_CONFIG_PROD }}
+            tag: latest
           - branch: develop
             container: easyshift_dev
             port: 8081
+            db_url: ${{ secrets.DB_URL_DEVELOP }}
+            oauth_config: ${{ secrets.APPLICATION_OAUTH_CONFIG_DEV }}
+            tag: dev_${{ github.sha }}
     steps:
       - name: Deploy via SSH
         if: github.ref == format('refs/heads/{0}', matrix.branch)
@@ -87,48 +93,31 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            if [ "${{ matrix.branch }}" = "main" ]; then
-              TAG="latest"
-            else
-              TAG="dev_${{ github.sha }}"
-            fi
-            
-            DB_URL="${{ secrets.DB_URL }}"  # or DB_URL_DEVELOP
-            JWT_ISSUER="${{ secrets.JWT_ISSUER }}"
-            JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}"
-            
-            # OAuth2
-            KAKAO_CLIENT_ID="${{ secrets.KAKAO_CLIENT_ID }}"
-            KAKAO_CLIENT_SECRET="${{ secrets.KAKAO_CLIENT_SECRET }}"
-            KAKAO_REDIRECT_URI="${{ secrets.KAKAO_REDIRECT_URI }}"
-            KAKAO_AUTHORIZATION_URI="${{ secrets.KAKAO_AUTHORIZATION_URI }}"
-            KAKAO_TOKEN_URI="${{ secrets.KAKAO_TOKEN_URI }}"
-            KAKAO_USER_INFO_URI="${{ secrets.KAKAO_USER_INFO_URI }}"
-            KAKAO_SCOPE="${{ secrets.KAKAO_SCOPE }}"
-            KAKAO_AUTHORIZATION_GRANT_TYPE="authorization_code"
-            
-            echo "Pulling image: ${{ env.IMAGE_NAME }}:$TAG"
-            docker pull ${{ env.IMAGE_NAME }}:$TAG
-            
-            echo "Stopping and removing existing container: ${{ matrix.container }}"
+            echo "Deploying to ${MATRIX_BRANCH}"
+            echo "Pulling image: ${{ env.IMAGE_NAME }}:${{ matrix.tag }}"
+            docker pull ${{ env.IMAGE_NAME }}:${{ matrix.tag }}
+
+            echo "Stopping and removing container: ${{ matrix.container }}"
             docker stop ${{ matrix.container }} || true
             docker rm ${{ matrix.container }} || true
-            
+
+            echo "Creating OAuth config file"
+            echo '${{ matrix.oauth_config }}' > /tmp/oauth_config.json
+
             echo "Starting new container..."
             docker run -d --restart unless-stopped \
               --name ${{ matrix.container }} \
               -p 127.0.0.1:${{ matrix.port }}:${{ secrets.SERVER_PORT }} \
               --add-host=host.docker.internal:host-gateway \
               -e SERVER_PORT="${{ secrets.SERVER_PORT }}" \
-              -e DB_URL="$DB_URL" \
-              -e JWT_ISSUER="$JWT_ISSUER" \
-              -e JWT_SECRET_KEY="$JWT_SECRET_KEY" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_CLIENT_ID="$KAKAO_CLIENT_ID" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_CLIENT_SECRET="$KAKAO_CLIENT_SECRET" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_REDIRECT_URI="$KAKAO_REDIRECT_URI" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_AUTHORIZATION_GRANT_TYPE="$KAKAO_AUTHORIZATION_GRANT_TYPE" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_SCOPE="$KAKAO_SCOPE" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KAKAO_AUTHORIZATION_URI="$KAKAO_AUTHORIZATION_URI" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KAKAO_TOKEN_URI="$KAKAO_TOKEN_URI" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KAKAO_USER_INFO_URI="$KAKAO_USER_INFO_URI" \
-              ${{ env.IMAGE_NAME }}:$TAG
+              -e DB_URL="${{ matrix.db_url }}" \
+              -e DB_DRIVER="${{ secrets.DB_DRIVER }}" \
+              -e DB_DIALECT="${{ secrets.DB_DIALECT }}" \
+              -e DB_USERNAME="${{ secrets.DB_USERNAME }}" \
+              -e DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+              -e JWT_ISSUER="${{ secrets.JWT_ISSUER }}" \
+              -e JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}" \
+              -e APPLICATION_OAUTH_CONFIG="$(cat /tmp/oauth_config.json)" \
+              ${{ env.IMAGE_NAME }}:${{ matrix.tag }}
+
+            echo "Deployment completed for ${{ matrix.container }}"
