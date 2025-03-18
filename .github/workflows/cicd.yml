@@ -30,17 +30,19 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push multi-arch image with caching
+      - name: Determine target branch
+        id: branch
         run: |
-          echo "Event: ${GITHUB_EVENT_NAME}"
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            TARGET_BRANCH="${GITHUB_BASE_REF}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            TARGET_BRANCH="${{ github.base_ref }}"
           else
             TARGET_BRANCH="${GITHUB_REF#refs/heads/}"
           fi
-          echo "Target branch: ${TARGET_BRANCH}"
+          echo "TARGET_BRANCH=${TARGET_BRANCH}" >> $GITHUB_ENV
 
-          if [ "${TARGET_BRANCH}" = "main" ]; then
+      - name: Build and push Docker image
+        run: |
+          if [ "$TARGET_BRANCH" = "main" ]; then
             echo "Building production image..."
             docker buildx build \
               --platform linux/amd64,linux/arm64 \
@@ -50,7 +52,7 @@ jobs:
               -t ${IMAGE_NAME}:prod_${IMAGE_TAG} \
               -t ${IMAGE_NAME}:latest \
               --push .
-          elif [ "${TARGET_BRANCH}" = "develop" ]; then
+          elif [ "$TARGET_BRANCH" = "develop" ]; then
             echo "Building development image..."
             docker buildx build \
               --platform linux/amd64,linux/arm64 \
@@ -58,10 +60,9 @@ jobs:
               --cache-to=type=registry,ref=${IMAGE_NAME}:cache,mode=max \
               -f Dockerfile \
               -t ${IMAGE_NAME}:dev_${IMAGE_TAG} \
-              -t ${IMAGE_NAME}:latest \
               --push .
           else
-            echo "Unsupported branch: ${TARGET_BRANCH}"
+            echo "Unsupported branch: $TARGET_BRANCH"
             exit 1
           fi
 
@@ -70,17 +71,19 @@ jobs:
     needs: build
     env:
       IMAGE_NAME: hojang/easyshift-backend
-      DB_URL_PROD: ${{ secrets.DB_URL }}
-      DB_URL_DEV: ${{ secrets.DB_URL_DEVELOP }}
     strategy:
       matrix:
         include:
           - branch: main
             container: easyshift_prod
             port: 81
+            db_url: ${{ secrets.DB_URL }}
+            oauth_config: ${{ secrets.APPLICATION_OAUTH_CONFIG_PROD }}
           - branch: develop
             container: easyshift_dev
             port: 8081
+            db_url: ${{ secrets.DB_URL_DEVELOP }}
+            oauth_config: ${{ secrets.APPLICATION_OAUTH_CONFIG_DEV }}
     steps:
       - name: Deploy via SSH
         if: github.ref == format('refs/heads/{0}', matrix.branch)
@@ -90,19 +93,10 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            if [ "${{ matrix.branch }}" = "main" ]; then
-              TAG="latest"
-              DB_URL="${{ env.DB_URL_PROD }}"
-              APPLICATION_OAUTH_CONFIG="${{ secrets.APPLICATION_OAUTH_CONFIG_PROD }}"
-            else
-              TAG="dev_${{ github.sha }}"
-              DB_URL="${{ env.DB_URL_DEV }}"
-              APPLICATION_OAUTH_CONFIG="${{ secrets.APPLICATION_OAUTH_CONFIG_DEV }}"
-            fi
-            echo "Pulling image: ${{ env.IMAGE_NAME }}:$TAG"
-            docker pull ${{ env.IMAGE_NAME }}:$TAG
+            echo "Pulling latest image: ${{ env.IMAGE_NAME }}"
+            docker pull ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
-            echo "Stopping and removing container: ${{ matrix.container }}"
+            echo "Stopping and removing existing container"
             docker stop ${{ matrix.container }} || true
             docker rm ${{ matrix.container }} || true
 
@@ -112,9 +106,10 @@ jobs:
               -p 127.0.0.1:${{ matrix.port }}:${{ secrets.SERVER_PORT }} \
               --add-host=host.docker.internal:host-gateway \
               -e SERVER_PORT="${{ secrets.SERVER_PORT }}" \
-              -e DB_URL="$DB_URL" \
+              -e DB_URL="${{ matrix.db_url }}" \
               -e DB_DRIVER="${{ secrets.DB_DRIVER }}" \
               -e DB_DIALECT="${{ secrets.DB_DIALECT }}" \
               -e DB_USERNAME="${{ secrets.DB_USERNAME }}" \
               -e DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-              ${{ env.IMAGE_NAME }}:$TAG
+              -e APPLICATION_OAUTH_CONFIG="${{ matrix.oauth_config }}" \
+              ${{ env.IMAGE_NAME }}:${{ github.sha }}
