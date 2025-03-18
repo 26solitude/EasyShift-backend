@@ -69,38 +69,15 @@ jobs:
   deploy:
     runs-on: ubuntu-22.04
     needs: build
-    env:
-      IMAGE_NAME: hojang/easyshift-backend
     strategy:
       matrix:
         include:
           - branch: main
             container: easyshift_prod
             port: 81
-            db_url: ${{ secrets.DB_URL }}
-            jwt_issuer: ${{ secrets.JWT_ISSUER }}
-            jwt_secret_key: ${{ secrets.JWT_SECRET_KEY }}
-            client_id: ${{ secrets.KAKAO_CLIENT_ID }}
-            client_secret: ${{ secrets.KAKAO_CLIENT_SECRET }}
-            redirect_uri: ${{ secrets.KAKAO_REDIRECT_URI }}
-            authorization_uri: ${{ secrets.KAKAO_AUTHORIZATION_URI }}
-            token_uri: ${{ secrets.KAKAO_TOKEN_URI }}
-            user_info_uri: ${{ secrets.KAKAO_USER_INFO_URI }}
-            scope: ${{ secrets.KAKAO_SCOPE }}
           - branch: develop
             container: easyshift_dev
             port: 8081
-            db_url: ${{ secrets.DB_URL_DEVELOP }}
-            jwt_issuer: ${{ secrets.JWT_ISSUER }}
-            jwt_secret_key: ${{ secrets.JWT_SECRET_KEY }}
-            client_id: ${{ secrets.KAKAO_CLIENT_ID }}
-            client_secret: ${{ secrets.KAKAO_CLIENT_SECRET }}
-            redirect_uri: ${{ secrets.KAKAO_REDIRECT_URI }}
-            authorization_uri: ${{ secrets.KAKAO_AUTHORIZATION_URI }}
-            token_uri: ${{ secrets.KAKAO_TOKEN_URI }}
-            user_info_uri: ${{ secrets.KAKAO_USER_INFO_URI }}
-            scope: ${{ secrets.KAKAO_SCOPE }}
-
     steps:
       - name: Deploy via SSH
         if: github.ref == format('refs/heads/{0}', matrix.branch)
@@ -110,10 +87,30 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            echo "Pulling latest image: ${{ env.IMAGE_NAME }}"
-            docker pull ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            if [ "${{ matrix.branch }}" = "main" ]; then
+              TAG="latest"
+            else
+              TAG="dev_${{ github.sha }}"
+            fi
             
-            echo "Stopping and removing existing container"
+            DB_URL="${{ secrets.DB_URL }}"  # or DB_URL_DEVELOP
+            JWT_ISSUER="${{ secrets.JWT_ISSUER }}"
+            JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}"
+            
+            # OAuth2
+            KAKAO_CLIENT_ID="${{ secrets.KAKAO_CLIENT_ID }}"
+            KAKAO_CLIENT_SECRET="${{ secrets.KAKAO_CLIENT_SECRET }}"
+            KAKAO_REDIRECT_URI="${{ secrets.KAKAO_REDIRECT_URI }}"
+            KAKAO_AUTHORIZATION_URI="${{ secrets.KAKAO_AUTHORIZATION_URI }}"
+            KAKAO_TOKEN_URI="${{ secrets.KAKAO_TOKEN_URI }}"
+            KAKAO_USER_INFO_URI="${{ secrets.KAKAO_USER_INFO_URI }}"
+            KAKAO_SCOPE="${{ secrets.KAKAO_SCOPE }}"
+            KAKAO_AUTHORIZATION_GRANT_TYPE="authorization_code"
+            
+            echo "Pulling image: ${{ env.IMAGE_NAME }}:$TAG"
+            docker pull ${{ env.IMAGE_NAME }}:$TAG
+            
+            echo "Stopping and removing existing container: ${{ matrix.container }}"
             docker stop ${{ matrix.container }} || true
             docker rm ${{ matrix.container }} || true
             
@@ -123,19 +120,15 @@ jobs:
               -p 127.0.0.1:${{ matrix.port }}:${{ secrets.SERVER_PORT }} \
               --add-host=host.docker.internal:host-gateway \
               -e SERVER_PORT="${{ secrets.SERVER_PORT }}" \
-              -e DB_URL="${{ matrix.db_url }}" \
-              -e DB_DRIVER="${{ secrets.DB_DRIVER }}" \
-              -e DB_DIALECT="${{ secrets.DB_DIALECT }}" \
-              -e DB_USERNAME="${{ secrets.DB_USERNAME }}" \
-              -e DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-              -e JWT_ISSUER="${{ matrix.jwt_issuer }}" \
-              -e JWT_SECRET_KEY="${{ matrix.jwt_secret_key }}" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_CLIENT_ID="${{ matrix.client_id }}" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_CLIENT_SECRET="${{ matrix.client_secret }}" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_REDIRECT_URI="${{ matrix.redirect_uri }}" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_AUTHORIZATION_GRANT_TYPE="authorization_code" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KAKAO_AUTHORIZATION_URI="${{ matrix.authorization_uri }}" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KAKAO_TOKEN_URI="${{ matrix.token_uri }}" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KAKAO_USER_INFO_URI="${{ matrix.user_info_uri }}" \
-              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_SCOPE="${{ matrix.scope }}" \
-              ${{ env.IMAGE_NAME }}:${{ github.sha }}
+              -e DB_URL="$DB_URL" \
+              -e JWT_ISSUER="$JWT_ISSUER" \
+              -e JWT_SECRET_KEY="$JWT_SECRET_KEY" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_CLIENT_ID="$KAKAO_CLIENT_ID" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_CLIENT_SECRET="$KAKAO_CLIENT_SECRET" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_REDIRECT_URI="$KAKAO_REDIRECT_URI" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_AUTHORIZATION_GRANT_TYPE="$KAKAO_AUTHORIZATION_GRANT_TYPE" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KAKAO_SCOPE="$KAKAO_SCOPE" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KAKAO_AUTHORIZATION_URI="$KAKAO_AUTHORIZATION_URI" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KAKAO_TOKEN_URI="$KAKAO_TOKEN_URI" \
+              -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KAKAO_USER_INFO_URI="$KAKAO_USER_INFO_URI" \
+              ${{ env.IMAGE_NAME }}:$TAG
